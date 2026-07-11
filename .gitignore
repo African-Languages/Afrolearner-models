@@ -1,0 +1,28 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+
+# Models
+*.pt
+*.pth
+*.zip
+
+# Training outputs
+coqui_output/
+best_model_mms/
+final_model_mms/
+old_best_model/
+old_final_model/
+
+# Dataset (if reproducible)
+multilingual_dataset/
+
+# Checkpoints
+checkpoint*
