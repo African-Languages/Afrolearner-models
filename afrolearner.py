@@ -106,13 +106,24 @@ log = logging.getLogger(__name__)
 # CONFIG
 # ======================
 HF_DATASET_NAME   = "google/WaxalNLP"
-EXPORT_ROOT       = "./coqui_data"            # local LJSpeech-style export per language
-FAIRSEQ_CKPT_ROOT = "./fairseq_checkpoints"   # downloaded Meta generator files, per language
-OUTPUT_ROOT       = "./coqui_output"          # trainer output per language
+
+# Paths are env-var overridable so the same script runs unchanged locally or
+# on Kaggle: point these at /kaggle/input/<dataset>/... (read-only, from an
+# uploaded Kaggle Dataset) and /kaggle/working/... (writable, session-
+# persisted) in the notebook's first cell rather than editing this file.
+EXPORT_ROOT       = os.environ.get("AFROLEARNER_EXPORT_ROOT", "./coqui_data")
+FAIRSEQ_CKPT_ROOT = os.environ.get("AFROLEARNER_FAIRSEQ_ROOT", "./fairseq_checkpoints")
+OUTPUT_ROOT       = os.environ.get("AFROLEARNER_OUTPUT_ROOT", "./coqui_output")
 SAMPLE_RATE       = 16000
 
 EPOCHS_PRETRAINED  = 200    # fine-tuning a pretrained fairseq generator
 EPOCHS_FULL_SCRATCH = 1000  # training a randomly-initialized model from zero
+
+# How often the trainer checkpoints, in optimizer steps. Kept short (rather
+# than coqui's 10000-step default) because Kaggle sessions can be cut off at
+# the 12h cap or weekly GPU quota mid-run — this bounds how much progress a
+# cutoff can lose. Override via env var to tune per language/hardware speed.
+CHECKPOINT_SAVE_STEP = int(os.environ.get("AFROLEARNER_SAVE_STEP", "200"))
 
 BATCH_SIZE       = 16
 MIN_AUDIO_SEC    = 0.5
@@ -131,6 +142,19 @@ LANGUAGES = {
     "ful": {"hf_config": "ful_tts", "fairseq_lang": "fuv"},
     "pcm": {"hf_config": "pcm_tts", "fairseq_lang": "pcm"},
 }
+
+# Optional comma-separated subset, e.g. AFROLEARNER_LANGS=yor or "yor,hau" —
+# lets a single Kaggle run/commit train (or resume) just one language instead
+# of looping all five, useful for a first validation run or for splitting
+# languages across separate notebooks/sessions.
+_langs_filter = os.environ.get("AFROLEARNER_LANGS")
+if _langs_filter:
+    _requested = [l.strip() for l in _langs_filter.split(",") if l.strip()]
+    _unknown = [l for l in _requested if l not in LANGUAGES]
+    if _unknown:
+        raise ValueError(f"AFROLEARNER_LANGS has unknown language code(s): {_unknown}. "
+                          f"Valid codes: {list(LANGUAGES)}")
+    LANGUAGES = {l: LANGUAGES[l] for l in _requested}
 
 
 # ======================
@@ -350,6 +374,10 @@ def build_model_and_config(lang: str, fairseq_lang: str, train_samples: list, sa
                                        # phonemizer/espeak dependency needed
         compute_input_seq_cache=True,
         print_step=25,
+        save_step=CHECKPOINT_SAVE_STEP,
+        save_best_after=CHECKPOINT_SAVE_STEP,
+        save_n_checkpoints=3,
+        save_checkpoints=True,
         output_path=os.path.join(OUTPUT_ROOT, lang),
         datasets=[],  # filled by caller via dataset_config, not needed here
         min_audio_len=int(MIN_AUDIO_SEC * SAMPLE_RATE),

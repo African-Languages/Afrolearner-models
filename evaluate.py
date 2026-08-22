@@ -15,7 +15,9 @@ from jiwer import wer, cer
 # ======================
 # CONFIG — use absolute path to avoid HF path validation error
 # ======================
-MODEL_PATH  = os.path.abspath("./best_model_mms")
+# Env-var overridable (matches AFROLEARNER_MMS_BEST_MODEL in train_mms.py) so
+# this points at the same model dir whether run locally or on Kaggle.
+MODEL_PATH  = os.path.abspath(os.environ.get("AFROLEARNER_MMS_BEST_MODEL", "./best_model_mms"))
 SAMPLE_RATE = 16000
 
 LANGUAGES = {

@@ -30,9 +30,14 @@ DATASET_NAME    = "google/WaxalNLP"
 BATCH_SIZE      = 4
 GRAD_ACCUM      = 4
 EPOCHS          = 10
-CHECKPOINT_PATH = "./checkpoint_mms.pt"
-BEST_MODEL_PATH = "./best_model_mms"
-PROCESSOR_PATH  = "./mms_processor"
+
+# Paths are env-var overridable so the same script runs unchanged locally or
+# on Kaggle: point these at /kaggle/working/... (writable, session-persisted)
+# in the notebook's first cell rather than editing this file.
+CHECKPOINT_PATH  = os.environ.get("AFROLEARNER_MMS_CHECKPOINT", "./checkpoint_mms.pt")
+BEST_MODEL_PATH  = os.environ.get("AFROLEARNER_MMS_BEST_MODEL", "./best_model_mms")
+PROCESSOR_PATH   = os.environ.get("AFROLEARNER_MMS_PROCESSOR", "./mms_processor")
+FINAL_MODEL_PATH = os.environ.get("AFROLEARNER_MMS_FINAL_MODEL", "./final_model_mms")
 
 CHUNK_SIZE      = 1000
 TOTAL_SIZE      = 20000
@@ -411,9 +416,9 @@ def train():
             log.info(f"Epoch {epoch+1} avg loss: {epoch_avg:.4f}")
             save_checkpoint(epoch + 1, 0, global_step, epoch_avg)
 
-    model.save_pretrained("./final_model_mms")
-    processor.save_pretrained("./final_model_mms")
-    log.info("Training complete — model saved to ./final_model_mms")
+    model.save_pretrained(FINAL_MODEL_PATH)
+    processor.save_pretrained(FINAL_MODEL_PATH)
+    log.info(f"Training complete — model saved to {FINAL_MODEL_PATH}")
 
 if __name__ == "__main__":
     train()
