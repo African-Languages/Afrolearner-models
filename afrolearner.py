@@ -479,16 +479,32 @@ def find_continue_path(output_path: str):
     down — confirmed against the installed trainer package's io.py.
 
     Returns the specific run subfolder containing the most recently
-    modified checkpoint, or None if output_path has no checkpoint at all
-    (a fresh run).
+    modified LOADABLE checkpoint, or None if output_path has no checkpoint
+    at all (a fresh run).
+
+    Verifies each candidate actually loads before committing to it, falling
+    back through progressively older checkpoints otherwise — confirmed on a
+    real run that a Kaggle session killed mid-write leaves a truncated .pth
+    on disk (torch.load raises EOFError). Without this check, the newest
+    checkpoint stays the mtime-based pick forever, permanently blocking that
+    language from ever resuming again once one save gets corrupted.
     """
     if not os.path.isdir(output_path):
         return None
     checkpoints = list(Path(output_path).rglob("*.pth"))
     if not checkpoints:
         return None
-    most_recent = max(checkpoints, key=lambda p: p.stat().st_mtime)
-    return str(most_recent.parent)
+
+    import torch
+    for candidate in sorted(checkpoints, key=lambda p: p.stat().st_mtime, reverse=True):
+        try:
+            torch.load(str(candidate), map_location="cpu", weights_only=False)
+            return str(candidate.parent)
+        except Exception as e:
+            log.warning(f"  Checkpoint {candidate} failed to load ({e}) — "
+                        f"trying an older checkpoint instead.")
+    log.warning(f"  No loadable checkpoint found under {output_path} — starting fresh.")
+    return None
 
 
 def train_language(lang: str, info: dict):
