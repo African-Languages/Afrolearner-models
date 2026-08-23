@@ -459,6 +459,30 @@ def build_model_and_config(lang: str, fairseq_lang: str, train_samples: list, sa
 # ======================
 # STEP 4 — TRAIN ONE LANGUAGE
 # ======================
+def find_continue_path(output_path: str):
+    """
+    coqui's Trainer.get_last_checkpoint() globs *.pth directly inside
+    whatever path it's given — it does NOT search subdirectories — but
+    coqui's own Trainer nests each run's checkpoints one level deeper, in a
+    timestamped subfolder of output_path (e.g.
+    coqui_output/<lang>/waxal_<lang>-<date>/checkpoint_*.pth). Passing
+    output_path itself as continue_path therefore raises "No models found
+    in continue path ..." even when a real checkpoint exists one level
+    down — confirmed against the installed trainer package's io.py.
+
+    Returns the specific run subfolder containing the most recently
+    modified checkpoint, or None if output_path has no checkpoint at all
+    (a fresh run).
+    """
+    if not os.path.isdir(output_path):
+        return None
+    checkpoints = list(Path(output_path).rglob("*.pth"))
+    if not checkpoints:
+        return None
+    most_recent = max(checkpoints, key=lambda p: p.stat().st_mtime)
+    return str(most_recent.parent)
+
+
 def train_language(lang: str, info: dict):
     from TTS.tts.configs.shared_configs import BaseDatasetConfig
     from TTS.tts.datasets import load_tts_samples
@@ -488,8 +512,7 @@ def train_language(lang: str, info: dict):
     os.makedirs(output_path, exist_ok=True)
 
     trainer = Trainer(
-        TrainerArgs(continue_path=output_path if os.path.isdir(output_path) and
-                    any(Path(output_path).rglob("*.pth")) else None),
+        TrainerArgs(continue_path=find_continue_path(output_path)),
         config,
         output_path,
         model=model,
