@@ -332,9 +332,23 @@ def try_load_fairseq_generator(model, config, fairseq_dir: str) -> bool:
 
     try:
         model.load_fairseq_checkpoint(config, fairseq_dir, eval=False, strict=True)
+
+        # coqui-tts's own Vits.load_fairseq_checkpoint() unconditionally sets
+        # model.disc = None (fairseq's MMS release ships generator weights only)
+        # and never reinitializes one — confirmed in the installed library source.
+        # Without this, Trainer.get_optimizer() crashes with
+        # "'NoneType' object is not iterable" the moment training starts. Recreate
+        # it exactly the way Vits.__init__ does when init_discriminator is set.
+        if model.disc is None:
+            from TTS.tts.models.vits import VitsDiscriminator
+            model.disc = VitsDiscriminator(
+                periods=model.args.periods_multi_period_discriminator,
+                use_spectral_norm=model.args.use_spectral_norm_disriminator,
+            )
+
         log.info(f"  Loaded pretrained fairseq generator from {fairseq_dir} "
-                 f"(discriminator NOT included — fairseq releases ship generator-only; "
-                 f"a fresh discriminator is initialized by the Vits model class itself).")
+                 f"(discriminator NOT included in the fairseq release — a fresh "
+                 f"one was reinitialized here for GAN training).")
         return True
     except Exception as e:
         log.warning(f"  Fairseq checkpoint load failed ({e}) — falling back to full_scratch training.")
