@@ -355,6 +355,43 @@ def try_load_fairseq_generator(model, config, fairseq_dir: str) -> bool:
         return False
 
 
+def build_characters_config(train_samples: list):
+    """
+    coqui-tts defaults to a plain ASCII A-Z/a-z character set (see
+    TTS.tts.utils.text.characters._characters) whenever VitsConfig isn't
+    given an explicit `characters=`, which silently drops every other
+    character during training — confirmed on this dataset: Igbo tone/
+    diacritic marks (ọ, ụ, ị, ṅ, ...) were being logged as "not found in
+    vocabulary" and discarded, one per occurrence, throughout full_scratch
+    training.
+
+    Pretrained fairseq-mode languages (yor/hau/pcm) aren't affected —
+    Vits.load_fairseq_checkpoint() overwrites the tokenizer afterward with
+    Meta's own vocab.txt — but full_scratch languages (ibo/ful) need a real
+    vocabulary from the start. Build it from the actual exported training
+    text so every character the model needs to reproduce is in-vocabulary.
+    """
+    from TTS.tts.configs.shared_configs import CharactersConfig
+
+    all_chars = set()
+    for s in train_samples:
+        all_chars.update(s["text"])
+    all_chars.discard(" ")
+
+    # Split into "letters" (incl. combining marks/tone diacritics and digits)
+    # vs. punctuation, matching how coqui's own default set is split.
+    letters = "".join(sorted(c for c in all_chars if unicodedata.category(c)[0] in "LMN"))
+    punctuations = "".join(sorted(c for c in all_chars if unicodedata.category(c)[0] not in "LMN"))
+
+    return CharactersConfig(
+        pad="<PAD>", eos="<EOS>", bos="<BOS>", blank="<BLNK>",
+        characters=letters,
+        punctuations=punctuations,
+        is_unique=True,
+        is_sorted=True,
+    )
+
+
 def build_model_and_config(lang: str, fairseq_lang: str, train_samples: list, sample_count: int):
     """
     Returns (model, config, mode) where mode is "pretrained" or "full_scratch".
@@ -367,6 +404,7 @@ def build_model_and_config(lang: str, fairseq_lang: str, train_samples: list, sa
         num_mels=80, mel_fmin=0, mel_fmax=None,
     )
     vits_args = VitsArgs()
+    characters_config = build_characters_config(train_samples)
 
     fairseq_dir = os.path.join(FAIRSEQ_CKPT_ROOT, fairseq_lang)
     attempt_fairseq = os.path.isdir(fairseq_dir)
@@ -386,6 +424,7 @@ def build_model_and_config(lang: str, fairseq_lang: str, train_samples: list, sa
         text_cleaner="basic_cleaners",
         use_phonemes=False,           # character-level — matches our export, no
                                        # phonemizer/espeak dependency needed
+        characters=characters_config,
         compute_input_seq_cache=True,
         print_step=25,
         save_step=CHECKPOINT_SAVE_STEP,
