@@ -376,10 +376,13 @@ def build_characters_config(train_samples: list):
     all_chars = set()
     for s in train_samples:
         all_chars.update(s["text"])
-    all_chars.discard(" ")
 
     # Split into "letters" (incl. combining marks/tone diacritics and digits)
-    # vs. punctuation, matching how coqui's own default set is split.
+    # vs. punctuation, matching how coqui's own default set is split — space
+    # included, the same way coqui's own default _punctuations ends in " ".
+    # (Confirmed via a real Kaggle run: leaving space out of both strings
+    # entirely drops it from the vocab, discarding every space in training
+    # text — every warning became "Character ' ' not found in vocabulary".)
     letters = "".join(sorted(c for c in all_chars if unicodedata.category(c)[0] in "LMN"))
     punctuations = "".join(sorted(c for c in all_chars if unicodedata.category(c)[0] not in "LMN"))
 
@@ -392,7 +395,8 @@ def build_characters_config(train_samples: list):
     )
 
 
-def build_model_and_config(lang: str, fairseq_lang: str, train_samples: list, sample_count: int):
+def build_model_and_config(lang: str, fairseq_lang: str, train_samples: list, sample_count: int,
+                            eval_samples: list = None):
     """
     Returns (model, config, mode) where mode is "pretrained" or "full_scratch".
     """
@@ -404,7 +408,11 @@ def build_model_and_config(lang: str, fairseq_lang: str, train_samples: list, sa
         num_mels=80, mel_fmin=0, mel_fmax=None,
     )
     vits_args = VitsArgs()
-    characters_config = build_characters_config(train_samples)
+    # Vocab is built from train+eval text (not just train) so a character that
+    # only happens to appear in an eval-split sample doesn't get missed —
+    # confirmed on a real run: one eval-only 'ù' triggered a "not found in
+    # vocabulary" warning against a vocab built from train_samples alone.
+    characters_config = build_characters_config(train_samples + (eval_samples or []))
 
     fairseq_dir = os.path.join(FAIRSEQ_CKPT_ROOT, fairseq_lang)
     attempt_fairseq = os.path.isdir(fairseq_dir)
@@ -505,7 +513,8 @@ def train_language(lang: str, info: dict):
     )
     log.info(f"  [{lang}] {len(train_samples)} train / {len(eval_samples) if eval_samples else 0} eval samples")
 
-    model, config, mode = build_model_and_config(lang, info["fairseq_lang"], train_samples, sample_count)
+    model, config, mode = build_model_and_config(lang, info["fairseq_lang"], train_samples, sample_count,
+                                                   eval_samples=eval_samples)
     log.info(f"  [{lang}] Training mode: {mode} | epochs: {config.epochs}")
 
     output_path = os.path.join(OUTPUT_ROOT, lang)
